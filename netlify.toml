@@ -1,0 +1,4 @@
+# Configuración de despliegue del dashboard (sitio estático).
+[build]
+  publish = "."
+  command = ""

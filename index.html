@@ -1113,6 +1113,7 @@ async function handleScanFile(file){
     var parts=[]; if(data.proveedor) parts.push(data.proveedor); if(data.ref) parts.push('Fact. '+data.ref);
     if(parts.length) document.getElementById('e_desc').value=parts.join(' - ');
     if(!document.getElementById('e_zona').value) document.getElementById('e_zona').value='General';
+    try{ document.getElementById('e_categoria').value=guessCategory(text); }catch(e){}
     var fc=document.getElementById('e_file_current'); if(fc) fc.textContent=window.pendingScanAttachment?('Comprobante adjunto: '+file.name):'';
     if(form) form.scrollIntoView({behavior:'smooth', block:'center'});
     var got=[]; if(data.fecha) got.push('fecha'); if(data.monto) got.push('monto'); if(data.ref) got.push('N. de factura'); if(data.proveedor) got.push('proveedor');
@@ -1123,6 +1124,16 @@ async function handleScanFile(file){
 async function extractPdfText(file){ var buf=await file.arrayBuffer(); var pdf=await pdfjsLib.getDocument({data:new Uint8Array(buf)}).promise; var out=''; var n=Math.min(pdf.numPages,3); for(var i=1;i<=n;i++){ var page=await pdf.getPage(i); var tc=await page.getTextContent(); out+=tc.items.map(function(it){return it.str;}).join(' ')+'\n'; } return out; }
 async function ocrImage(file){ var r=await Tesseract.recognize(file,'spa'); return (r&&r.data&&r.data.text)||''; }
 async function ocrPdfFirstPage(file){ var buf=await file.arrayBuffer(); var pdf=await pdfjsLib.getDocument({data:new Uint8Array(buf)}).promise; var page=await pdf.getPage(1); var vp=page.getViewport({scale:2}); var c=document.createElement('canvas'); c.width=vp.width; c.height=vp.height; await page.render({canvasContext:c.getContext('2d'),viewport:vp}).promise; var r=await Tesseract.recognize(c,'spa'); return (r&&r.data&&r.data.text)||''; }
+function guessCategory(text){
+  var t=(text||'').toLowerCase();
+  if(/gasolina|gasohol|combustible|grifo|petr[oó]leo|di[eé]sel|\bglp\b|primax|repsol|petroper/.test(t)) return 'Combustible';
+  if(/fotocheck|foto\s*check|portafoto|photocheck|uniforme|\bepp\b|casco|chaleco|\bbotas\b|guantes|\bpolo\b|lentes|arn[eé]s|zapato|mameluco/.test(t)) return 'EPP / uniformes';
+  if(/cable|fibra|conector|\bdrop\b|mufa|roseta|patchcord|ferreter|materiales|herramienta|taladro|alicate|desarmador|power\s*meter/.test(t)) return 'Materiales / cable';
+  if(/llanta|neum[aá]tico|mantenimiento|repuesto|aceite|bater[ií]a|taller|\bsoat\b|revisi[oó]n\s*t[eé]cnica|veh[ií]culo|camioneta|moto/.test(t)) return 'Vehículos y mantenimiento';
+  if(/alquiler|arriendo|oficina|internet|\bluz\b|\bagua\b|energ[ií]a|local/.test(t)) return 'Alquiler / oficina';
+  if(/planilla|sueldo|remuneraci[oó]n|\brrhh\b|honorarios/.test(t)) return 'Planillas / RRHH';
+  return 'Otros';
+}
 function parseMoney(s){ if(!s) return null; var t=String(s).replace(/[^0-9.,]/g,''); if(!t) return null; var dec=Math.max(t.lastIndexOf(','),t.lastIndexOf('.')); if(dec===-1){ var v0=parseFloat(t); return isNaN(v0)?null:v0; } var intp=t.slice(0,dec).replace(/[.,]/g,''); var decp=t.slice(dec+1).replace(/[^0-9]/g,''); var v=parseFloat(intp+'.'+decp); return isNaN(v)?null:v; }
 function parseInvoice(text){
   var T=(text||'').replace(/ /g,' '); var res={fecha:'',monto:'',ref:'',proveedor:''};

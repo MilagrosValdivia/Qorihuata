@@ -156,6 +156,9 @@
   .scan-ok{background:var(--green-bg);color:var(--green);border-color:var(--green);}
   .scan-warn{background:var(--gold-bg);color:var(--gold-strong);border-color:var(--gold-line);}
   .btn-editar{color:var(--purple);font-weight:600;}
+  .exp-detail .field{display:flex;flex-direction:column;gap:3px;}
+  .exp-detail .field label{font-size:11px;color:var(--ink-mute);text-transform:uppercase;letter-spacing:0.03em;}
+  .exp-detail .field input{padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--surface-2);color:var(--ink);font-family:inherit;font-size:13px;}
   .acts-sticky{position:sticky;right:0;background:var(--surface);box-shadow:-8px 0 10px -8px rgba(0,0,0,0.15);}
   th.acts-sticky{background:var(--surface-2);}
 </style>
@@ -356,11 +359,11 @@
             </div>
             <div class="field"><label>Zona</label><input list="zonaList3" id="o_zona" placeholder="SUR"><datalist id="zonaList3"><option value="SUR"><option value="ESTE"><option value="NORTE"><option value="CENTRO"></datalist></div>
             <div class="field"><label>Técnico asignado</label><select id="o_tecnico"></select></div>
-            <div class="field"><label>Estado</label>
-              <select id="o_estado"><option>Pendiente</option><option>Programada</option><option>En curso</option><option>Completada</option><option>Reprogramada</option><option>Cancelada</option></select>
-            </div>
-            <div class="field" style="grid-column:1/-1"><label>Cliente / dirección</label><input id="o_direccion" placeholder="Av. Los Próceres 1234, SJM - Cliente Juan Pérez"></div>
+            <div class="field" style="grid-column:1/-1"><label>Dirección destino</label><input id="o_direccion" placeholder="Av. Los Próceres 1234, SJM - Cliente Juan Pérez"></div>
+            <div class="field" style="grid-column:1/-1"><label>Punto de inicio</label><input id="o_origen" placeholder="Base / almacén, ej: Av. Tomás Valle 2110, SMP"></div>
+            <div class="field"><label>Hora de salida</label><input id="o_hora_ini" type="time"></div>
             <div class="field" style="grid-column:1/-1"><label>Notas</label><input id="o_notas" placeholder="Coordinar acceso con portería, llevar 80m de drop"></div>
+            <p class="note" style="grid-column:1/-1;margin:0;">Al guardar, la orden queda como <b>Programada</b>. Luego, al abrirla, podras ponerla En curso / Pendiente / Completada y registrar la hora de llegada.</p>
           </div>
           <div class="form-actions">
             <button onclick="toggleForm('order')">Cancelar</button>
@@ -382,7 +385,10 @@
       <div class="view" id="view-inventario">
         <div class="sec-head">
           <h1 style="margin:0;">Inventario · Materiales y herramientas</h1>
-          <button class="primary" onclick="toggleForm('inv')"><i class="ti ti-plus"></i>Agregar ítem</button>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;">
+            <button onclick="toggleInvSalida()"><i class="ti ti-package-export"></i>Registrar salida</button>
+            <button class="primary" onclick="toggleForm('inv')"><i class="ti ti-plus"></i>Agregar ítem</button>
+          </div>
         </div>
         <p class="sub" style="margin-top:2px;">Stock de cable, conectores, herramientas y EPP. Las entradas vienen de las facturas de Flujos y las salidas de las órdenes. En amarillo, lo que está por debajo del mínimo.</p>
 
@@ -400,6 +406,19 @@
           <div class="form-actions">
             <button onclick="toggleForm('inv')">Cancelar</button>
             <button class="primary" onclick="saveInvEntry()"><i class="ti ti-check"></i>Guardar</button>
+          </div>
+        </div>
+
+        <div class="form-card" id="invSalidaForm">
+          <div class="form-grid">
+            <div class="field" style="grid-column:span 2"><label>Material (ítem del inventario)</label><select id="sal_item"></select></div>
+            <div class="field"><label>Cantidad usada</label><input id="sal_cantidad" type="number" step="any" placeholder="0"></div>
+            <div class="field"><label>Orden / operación</label><select id="sal_orden"></select></div>
+            <div class="field"><label>Fecha</label><input id="sal_fecha" type="date"></div>
+          </div>
+          <div class="form-actions">
+            <button onclick="toggleInvSalida()">Cancelar</button>
+            <button class="primary" onclick="registerInvSalida()"><i class="ti ti-check"></i>Registrar salida</button>
           </div>
         </div>
 
@@ -1311,8 +1330,9 @@ async function saveOrderEntry(){
     tipo: document.getElementById('o_tipo').value,
     zona: document.getElementById('o_zona').value.trim().toUpperCase() || 'SIN ZONA',
     tecnico: document.getElementById('o_tecnico').value,
-    estado: document.getElementById('o_estado').value,
     direccion,
+    origen: document.getElementById('o_origen').value.trim(),
+    horaIni: document.getElementById('o_hora_ini').value,
     notas: document.getElementById('o_notas').value.trim()
   };
   if(editingOrderId){
@@ -1320,7 +1340,7 @@ async function saveOrderEntry(){
     orders[idx] = {...orders[idx], ...entry};
   } else {
     const nextId = orders.length ? Math.max(...orders.map(x=>x.id))+1 : 1;
-    orders.push({id: nextId, codigo: 'ORD-' + String(nextId).padStart(3,'0'), ...entry});
+    orders.push({id: nextId, codigo: 'ORD-' + String(nextId).padStart(3,'0'), estado:'Programada', ...entry});
   }
   await persistOrders();
   clearOrderForm();
@@ -1329,11 +1349,87 @@ async function saveOrderEntry(){
 }
 
 function clearOrderForm(){
-  ['o_fecha','o_zona','o_direccion','o_notas'].forEach(id=>document.getElementById(id).value='');
+  ['o_fecha','o_zona','o_direccion','o_notas','o_origen','o_hora_ini'].forEach(id=>document.getElementById(id).value='');
   document.getElementById('o_tipo').selectedIndex = 0;
-  document.getElementById('o_estado').selectedIndex = 0;
   const t = document.getElementById('o_tecnico'); if(t) t.value = '';
   editingOrderId = null;
+}
+
+/* ===== Ruta/tiempo (Google Maps) y monitoreo (Segursat) ===== */
+const TOMTOM_KEY = 'LG3dSV9LWsvSHwtsPXTtj1SlUzT1M0gY';  /* API key gratis de developer.tomtom.com (sin tarjeta) -> ver pasos */
+async function ttGeocode(q){
+  try{
+    var url='https://api.tomtom.com/search/2/geocode/'+encodeURIComponent(q)+'.json?key='+TOMTOM_KEY+'&countrySet=PE&limit=1';
+    var res=await fetch(url); var j=await res.json();
+    if(j && j.results && j.results[0] && j.results[0].position) return j.results[0].position; /* {lat, lon} */
+  }catch(e){}
+  return null;
+}
+async function ttRoute(a,b){
+  var url='https://api.tomtom.com/routing/1/calculateRoute/'+a.lat+','+a.lon+':'+b.lat+','+b.lon+'/json?key='+TOMTOM_KEY+'&traffic=true&travelMode=car';
+  var res=await fetch(url); var j=await res.json();
+  if(j && j.routes && j.routes[0] && j.routes[0].summary) return {duration:j.routes[0].summary.travelTimeInSeconds, distance:j.routes[0].summary.lengthInMeters};
+  throw new Error('no route');
+}
+const SEGURSAT_URL = 'https://app.segursatgps.com/maps/';  /* <-- reemplaza por el enlace de tu plataforma Segursat */
+function mapsRouteUrl(o){
+  var dest = encodeURIComponent((o && o.direccion) ? o.direccion : '');
+  var orig = (o && o.origen) ? ('&origin=' + encodeURIComponent(o.origen)) : '';
+  return 'https://www.google.com/maps/dir/?api=1' + orig + '&destination=' + dest + '&travelmode=driving';
+}
+function openOrderRoute(id){ var o = orders.find(function(x){return x.id===id;}); if(o) window.open(mapsRouteUrl(o), '_blank'); }
+function durBetween(a,b){
+  if(!a || !b) return '—';
+  var pa=String(a).split(':'), pb=String(b).split(':');
+  var m=(parseInt(pb[0],10)*60+parseInt(pb[1],10))-(parseInt(pa[0],10)*60+parseInt(pa[1],10));
+  if(isNaN(m)) return '—';
+  if(m<0) m+=1440;
+  var h=Math.floor(m/60), mm=m%60;
+  return (h? h+' h ' : '') + mm + ' min';
+}
+
+async function geocode(q){
+  try{
+    var qq=q||''; if(!/lima|per[uú]/i.test(qq)) qq=qq+', Lima, Perú';
+    var url='https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=pe&bounded=1&viewbox=-77.25,-11.55,-76.70,-12.55&q='+encodeURIComponent(qq);
+    var res=await fetch(url,{headers:{'Accept':'application/json'}});
+    var j=await res.json();
+    if(j && j[0]) return {lat:parseFloat(j[0].lat), lon:parseFloat(j[0].lon)};
+  }catch(e){}
+  return null;
+}
+async function osrmRoute(a,b){
+  var url='https://router.project-osrm.org/route/v1/driving/'+a.lon+','+a.lat+';'+b.lon+','+b.lat+'?overview=false';
+  var res=await fetch(url); var j=await res.json();
+  if(j && j.routes && j.routes[0]) return {duration:j.routes[0].duration, distance:j.routes[0].distance};
+  throw new Error('no route');
+}
+function openOrderWaze(id){ var o=orders.find(function(x){return x.id===id;}); if(o) window.open('https://waze.com/ul?q='+encodeURIComponent(o.direccion||'')+'&navigate=yes','_blank'); }
+async function estimateOrderTime(id, btn){
+  var o=orders.find(function(x){return x.id===id;}); if(!o) return;
+  if(!o.origen || !o.direccion){ alert('Para calcular el tiempo necesito el "Punto de inicio" y el "Cliente / direccion (destino)". Edita la orden y completalos.'); return; }
+  var old = btn ? btn.innerHTML : '';
+  if(btn){ btn.disabled=true; btn.innerHTML='<i class="ti ti-loader"></i> Calculando...'; }
+  try{
+    var useTT = (typeof TOMTOM_KEY!=='undefined') && TOMTOM_KEY && !/PON_AQUI/.test(TOMTOM_KEY);
+    var r, conTrafico=false;
+    if(useTT){
+      var mo=await ttGeocode(o.origen); var md=await ttGeocode(o.direccion);
+      if(!mo || !md) throw new Error('geo');
+      r=await ttRoute(mo, md); conTrafico=true;
+    } else {
+      var go=await geocode(o.origen); var gd=await geocode(o.direccion);
+      if(!go || !gd) throw new Error('geo');
+      r=await osrmRoute(go, gd);
+      if((r.distance/1000) > 120) throw new Error('lejos');
+      r={duration: r.duration*1.3, distance: r.distance};
+    }
+    o.etaMin=Math.round(r.duration/60); o.etaKm=Math.round((r.distance/1000)*10)/10; o.etaTrafico=conTrafico;
+    await persistOrders(); renderOrdersTable();
+  }catch(e){
+    if(btn){ btn.disabled=false; btn.innerHTML=old; }
+    alert('No pude ubicar bien la ruta. Escribe las direcciones mas completas incluyendo el DISTRITO (ej: "Av. Ignacio Alvarez Thomas 1315, Lince" y "Av. Camino Real 355, San Isidro"). Tambien puedes usar el boton "Google Maps (trafico)".');
+  }
 }
 
 function editOrder(id){
@@ -1345,9 +1441,10 @@ function editOrder(id){
   document.getElementById('o_tipo').value = o.tipo || 'Instalación';
   document.getElementById('o_zona').value = o.zona || '';
   document.getElementById('o_tecnico').value = o.tecnico || '';
-  document.getElementById('o_estado').value = o.estado || 'Pendiente';
   document.getElementById('o_direccion').value = o.direccion || '';
   document.getElementById('o_notas').value = o.notas || '';
+  document.getElementById('o_origen').value = o.origen || '';
+  document.getElementById('o_hora_ini').value = o.horaIni || '';
   document.getElementById('orderForm').classList.add('open');
   document.getElementById('orderForm').scrollIntoView({behavior:'smooth', block:'center'});
 }
@@ -1364,6 +1461,12 @@ async function setOrderStatus(id, estado){
   orders[idx].estado = estado;
   await persistOrders();
   renderAll();
+}
+async function setArrival(id){
+  var el=document.getElementById('lleg_'+id); if(!el) return;
+  var idx=orders.findIndex(function(x){return x.id===id;}); if(idx===-1) return;
+  orders[idx].horaFin=el.value;
+  await persistOrders(); renderAll();
 }
 
 function toggleOrderRow(id){
@@ -1405,10 +1508,31 @@ function renderOrdersTable(){
           rows.push(`<tr class="exp-detail-row"><td colspan="8">
             <div class="exp-detail">
               <div class="exp-detail-desc"><span class="label">Notas</span><p>${o.notas || 'Sin notas.'}</p></div>
+              <div class="exp-detail-desc"><span class="label">Ruta y control de viaje</span></div>
+              <div class="exp-detail-grid">
+                <div><span class="label">Punto de inicio</span><span>${o.origen || '—'}</span></div>
+                <div><span class="label">Destino</span><span>${o.direccion || '—'}</span></div>
+                <div><span class="label">Salida</span><span class="mono">${o.horaIni || '—'}</span></div>
+                <div><span class="label">Llegada</span><span class="mono">${o.horaFin || '—'}</span></div>
+                <div><span class="label">Duración real</span><span>${durBetween(o.horaIni, o.horaFin)}</span></div>
+                <div><span class="label">Tiempo estimado (ruta)</span><span>${o.etaMin ? ('~'+o.etaMin+' min · '+o.etaKm+' km'+(o.etaTrafico?' (con tráfico)':'')) : '— (pulsa "Calcular")'}</span></div>
+              </div>
+              <div class="exp-detail-actions" style="margin:2px 0 4px;">
+                <button class="primary" onclick="event.stopPropagation(); estimateOrderTime(${o.id}, this)"><i class="ti ti-clock-hour-4"></i>Calcular tiempo estimado</button>
+                <button onclick="event.stopPropagation(); openOrderRoute(${o.id})"><i class="ti ti-map-2"></i>Google Maps (tráfico)</button>
+                <button onclick="event.stopPropagation(); window.open(SEGURSAT_URL,'_blank')"><i class="ti ti-device-cctv"></i>Segursat</button>
+              </div>
+              <p class="note" style="margin:0 0 12px;">El estimado gratuito incluye un margen de tráfico típico de Lima; para el tiempo <b>exacto en vivo</b> usa Google Maps o configura TomTom.</p>
               ${orderConsumoPanel(o)}
+              ${o.estado==='En curso' ? `<div class="exp-detail-desc"><span class="label">Registrar hora de llegada</span>
+                <div style="display:flex;gap:8px;align-items:center;margin-top:4px;flex-wrap:wrap;">
+                  <input type="time" id="lleg_${o.id}" value="${o.horaFin||''}" style="max-width:150px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--surface-2);color:var(--ink);font-family:inherit;">
+                  <button onclick="event.stopPropagation(); setArrival(${o.id})"><i class="ti ti-check"></i>Guardar llegada</button>
+                </div></div>` : ''}
               <div class="exp-detail-actions">
-                ${o.estado !== 'Completada' ? `<button onclick="event.stopPropagation(); setOrderStatus(${o.id}, 'Completada')"><i class="ti ti-check"></i>Marcar completada</button>` : ''}
-                ${o.estado !== 'En curso' && o.estado !== 'Completada' ? `<button onclick="event.stopPropagation(); setOrderStatus(${o.id}, 'En curso')"><i class="ti ti-player-play"></i>Iniciar</button>` : ''}
+                ${o.estado !== 'En curso' ? `<button class="primary" onclick="event.stopPropagation(); setOrderStatus(${o.id}, 'En curso')"><i class="ti ti-player-play"></i>Poner En curso</button>` : ''}
+                ${o.estado !== 'Pendiente' ? `<button onclick="event.stopPropagation(); setOrderStatus(${o.id}, 'Pendiente')"><i class="ti ti-clock"></i>Poner Pendiente</button>` : ''}
+                ${o.estado !== 'Completada' ? `<button onclick="event.stopPropagation(); setOrderStatus(${o.id}, 'Completada')"><i class="ti ti-check"></i>Completada</button>` : ''}
                 <button onclick="event.stopPropagation(); editOrder(${o.id})"><i class="ti ti-edit"></i>Modificar</button>
                 <button class="danger" onclick="event.stopPropagation(); deleteOrder(${o.id})"><i class="ti ti-trash"></i>Eliminar</button>
               </div>
@@ -1600,6 +1724,35 @@ async function postExpenseItems(eid){
   if(changed){ await persistExpenses(); await persistInventory(); renderAll(); }
 }
 
+function toggleInvSalida(){
+  var el=document.getElementById('invSalidaForm'); if(!el) return;
+  el.classList.toggle('open');
+  if(el.classList.contains('open')) populateInvSalida();
+}
+function populateInvSalida(){
+  var it=document.getElementById('sal_item');
+  if(it) it.innerHTML = inventory.map(function(inv){return '<option value="'+inv.id+'">'+inv.nombre+' — '+inv.stock+' '+inv.unidad+'</option>';}).join('');
+  var od=document.getElementById('sal_orden');
+  if(od) od.innerHTML = '<option value="">— Sin orden —</option>' + orders.map(function(o){return '<option value="'+o.codigo+'">'+o.codigo+' · '+((o.direccion||'').slice(0,40))+'</option>';}).join('');
+  var f=document.getElementById('sal_fecha'); if(f && !f.value) f.value = new Date().toISOString().slice(0,10);
+}
+async function registerInvSalida(){
+  var invId=parseInt(document.getElementById('sal_item').value,10);
+  var cant=parseFloat(document.getElementById('sal_cantidad').value);
+  var ordenCodigo=document.getElementById('sal_orden').value;
+  var fecha=document.getElementById('sal_fecha').value || new Date().toISOString().slice(0,10);
+  if(!invId || !cant || cant<=0){ alert('Elige el material y una cantidad válida.'); return; }
+  var inv=inventory.find(function(x){return x.id===invId;}); if(!inv) return;
+  if(cant > (Number(inv.stock)||0)){ if(!confirm('La cantidad supera el stock actual ('+inv.stock+' '+inv.unidad+'). ¿Registrar igual?')) return; }
+  inv.salidas = inv.salidas || [];
+  inv.salidas.push({ordenCodigo: ordenCodigo||'—', fecha: fecha, cantidad: cant});
+  inv.stock = (Number(inv.stock)||0) - cant;
+  await persistInventory();
+  document.getElementById('invSalidaForm').classList.remove('open');
+  document.getElementById('sal_cantidad').value='';
+  renderAll();
+}
+
 function orderConsumoPanel(o){
   const usados = [];
   inventory.forEach(inv=>{
@@ -1607,18 +1760,9 @@ function orderConsumoPanel(o){
       usados.push(`<div style="font-size:13px;padding:4px 0;border-bottom:1px solid var(--line);">${inv.nombre}: ${sx.cantidad} ${inv.unidad}</div>`);
     });
   });
-  const opts = inventory.map(inv=>`<option value="${inv.id}">${inv.nombre} — ${inv.stock} ${inv.unidad}</option>`).join('');
-  const form = inventory.length ? `
-    <div class="form-grid" style="margin-bottom:8px;">
-      <div class="field" style="grid-column:span 2"><label>Ítem del inventario</label><select id="ord_consumo_item" onclick="event.stopPropagation()">${opts}</select></div>
-      <div class="field"><label>Cantidad usada</label><input id="ord_consumo_cantidad" type="number" step="any" onclick="event.stopPropagation()"></div>
-    </div>
-    <div class="exp-detail-actions"><button onclick="event.stopPropagation(); registerOrderConsumo(${o.id})"><i class="ti ti-package-export"></i>Descontar del inventario</button></div>`
-    : '<p class="note" style="margin:2px 0;">Agrega ítems en Inventario para poder descontarlos aquí.</p>';
   return `<div class="exp-detail-desc">
     <span class="label">Materiales usados en esta orden</span>
-    <div style="margin:6px 0;">${usados.length ? usados.join('') : '<p class="note" style="margin:2px 0;">Sin materiales descontados todavía.</p>'}</div>
-    ${form}
+    <div style="margin:6px 0;">${usados.length ? usados.join('') : '<p class="note" style="margin:2px 0;">El almacenero registra los materiales usados desde la sección <b>Inventario</b> (botón "Registrar salida").</p>'}</div>
   </div>`;
 }
 
@@ -1737,27 +1881,76 @@ async function deleteVeh(id){
   renderAll();
 }
 
+let expandedVehId = null;
+function toggleVehRow(id){ expandedVehId = (expandedVehId===id)?null:id; renderVehTable(); }
+async function addVehLog(id){
+  var f=document.getElementById('vlog_fecha_'+id), ki=document.getElementById('vlog_kmini_'+id), kf=document.getElementById('vlog_kmfin_'+id), c=document.getElementById('vlog_comb_'+id);
+  if(!f) return;
+  var idx=vehicles.findIndex(function(x){return x.id===id;}); if(idx===-1) return;
+  var log={ fecha:f.value||new Date().toISOString().slice(0,10), kmIni:parseFloat(ki.value)||null, kmFin:parseFloat(kf.value)||null, comb:(c.value||'').trim() };
+  if(!Array.isArray(vehicles[idx].logs)) vehicles[idx].logs=[];
+  vehicles[idx].logs.unshift(log);
+  if(log.kmFin!=null) vehicles[idx].km=log.kmFin;
+  await persistVehicles(); renderVehTable();
+}
+async function delVehLog(id, i){
+  var idx=vehicles.findIndex(function(x){return x.id===id;}); if(idx===-1) return;
+  if(Array.isArray(vehicles[idx].logs)){ vehicles[idx].logs.splice(i,1); await persistVehicles(); renderVehTable(); }
+}
 function renderVehTable(){
   const wrap = document.getElementById('vehTableWrap');
   if(!wrap) return;
   if(!vehicles.length){ wrap.innerHTML = '<div class="empty">Sin vehículos registrados. Usa "Agregar vehículo" para cargar la flota.</div>'; return; }
+  const today = new Date().toISOString().slice(0,10);
   wrap.innerHTML = `<div class="table-scroll"><table>
-    <thead><tr><th>Placa</th><th>Modelo</th><th>Zona</th><th>Asignado a</th><th style="text-align:right">Km</th><th>SOAT</th><th>Rev. técnica</th><th>Estado</th><th class="acts-sticky">Acciones</th></tr></thead>
+    <thead><tr><th></th><th>Placa</th><th>Modelo</th><th>Zona</th><th>Asignado a</th><th style="text-align:right">Km</th><th>SOAT</th><th>Rev. técnica</th><th>Estado</th><th class="acts-sticky">Acciones</th></tr></thead>
     <tbody>
-      ${vehicles.map(v=>`<tr>
-        <td class="mono">${v.placa || '—'}</td>
-        <td>${v.modelo}</td>
-        <td>${v.zona ? `<span class="zone-pill ${zoneClass(v.zona)}">${v.zona}</span>` : '—'}</td>
-        <td>${v.asignado || '—'}</td>
-        <td class="num">${Number(v.km||0).toLocaleString('es-PE')}</td>
-        <td>${docPill(v.soat)}</td>
-        <td>${docPill(v.revision)}</td>
-        <td><span class="status-pill ${v.estado==='Operativo' ? 'status-ok' : v.estado==='En taller' ? 'status-pending' : ''}">${v.estado}</span></td>
-        <td class="acts-sticky" style="white-space:nowrap;">
-          <button class="ghost btn-editar" title="Editar" onclick="editVeh(${v.id})" aria-label="Editar vehículo"><i class="ti ti-edit"></i>Editar</button>
-          <button class="ghost danger" title="Eliminar" onclick="deleteVeh(${v.id})" aria-label="Eliminar vehículo"><i class="ti ti-trash"></i>Eliminar</button>
-        </td>
-      </tr>`).join('')}
+      ${vehicles.map(v=>{
+        const isOpen = expandedVehId===v.id;
+        const logs = Array.isArray(v.logs)?v.logs:[];
+        const rows=[`<tr class="exp-row${isOpen?' exp-row-open':''}" onclick="toggleVehRow(${v.id})" tabindex="0" role="button" aria-expanded="${isOpen}">
+          <td><i class="ti ti-chevron-down chevron${isOpen?' chevron-open':''}" aria-hidden="true"></i></td>
+          <td class="mono">${v.placa || '—'}</td>
+          <td>${v.modelo}</td>
+          <td>${v.zona ? `<span class="zone-pill ${zoneClass(v.zona)}">${v.zona}</span>` : '—'}</td>
+          <td>${v.asignado || '—'}</td>
+          <td class="num">${Number(v.km||0).toLocaleString('es-PE')}</td>
+          <td>${docPill(v.soat)}</td>
+          <td>${docPill(v.revision)}</td>
+          <td><span class="status-pill ${v.estado==='Operativo' ? 'status-ok' : v.estado==='En taller' ? 'status-pending' : ''}">${v.estado}</span></td>
+          <td class="acts-sticky" style="white-space:nowrap;">
+            <button class="ghost btn-editar" title="Editar" onclick="event.stopPropagation(); editVeh(${v.id})" aria-label="Editar vehículo"><i class="ti ti-edit"></i>Editar</button>
+            <button class="ghost danger" title="Eliminar" onclick="event.stopPropagation(); deleteVeh(${v.id})" aria-label="Eliminar vehículo"><i class="ti ti-trash"></i>Eliminar</button>
+          </td>
+        </tr>`];
+        if(isOpen){
+          const logRows = logs.length ? logs.map((l,i)=>`<tr>
+              <td class="mono">${l.fecha||'—'}</td>
+              <td class="num">${l.kmIni!=null?Number(l.kmIni).toLocaleString('es-PE'):'—'}</td>
+              <td class="num">${l.kmFin!=null?Number(l.kmFin).toLocaleString('es-PE'):'—'}</td>
+              <td class="num">${(l.kmIni!=null&&l.kmFin!=null)?(Number(l.kmFin-l.kmIni).toLocaleString('es-PE')+' km'):'—'}</td>
+              <td>${l.comb||'—'}</td>
+              <td><button class="ghost danger" onclick="event.stopPropagation(); delVehLog(${v.id}, ${i})" title="Borrar"><i class="ti ti-trash"></i></button></td>
+            </tr>`).join('') : `<tr><td colspan="6" class="note" style="padding:10px 12px;">Sin registros diarios todavía.</td></tr>`;
+          rows.push(`<tr class="exp-detail-row"><td colspan="10">
+            <div class="exp-detail">
+              <div class="exp-detail-desc"><span class="label">Registro diario de kilometraje y combustible</span></div>
+              <div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;margin-bottom:12px;">
+                <div class="field" style="min-width:140px;"><label>Fecha</label><input type="date" id="vlog_fecha_${v.id}" value="${today}"></div>
+                <div class="field" style="min-width:120px;"><label>Km inicio del día</label><input type="number" step="1" id="vlog_kmini_${v.id}" placeholder="0"></div>
+                <div class="field" style="min-width:120px;"><label>Km fin del día</label><input type="number" step="1" id="vlog_kmfin_${v.id}" placeholder="0"></div>
+                <div class="field" style="min-width:160px;"><label>Combustible</label><input id="vlog_comb_${v.id}" placeholder="Ej: 2 gal / lleno a 1/2"></div>
+                <button class="primary" onclick="event.stopPropagation(); addVehLog(${v.id})"><i class="ti ti-plus"></i>Registrar día</button>
+              </div>
+              <div class="table-scroll"><table>
+                <thead><tr><th>Fecha</th><th style="text-align:right">Km inicio</th><th style="text-align:right">Km fin</th><th style="text-align:right">Km del día</th><th>Combustible</th><th></th></tr></thead>
+                <tbody>${logRows}</tbody>
+              </table></div>
+            </div>
+          </td></tr>`);
+        }
+        return rows.join('');
+      }).join('')}
     </tbody>
   </table></div>`;
 }
